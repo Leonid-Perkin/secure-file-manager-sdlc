@@ -49,6 +49,7 @@ with tempfile.TemporaryDirectory(prefix="sfm-test-") as temp:
         "unblock", "student", "exit"
     ])
     assert '{"ok":true}' in output
+    assert "Некорректный JSON" in output and "Некорректный или недопустимый XML" in output
     assert "<root><value>1</value></root>" in output
     assert "Заголовок: Заголовок JSON" in output and "Текст: Текст JSON" in output
     assert "Заголовок: Заголовок XML" in output and "Текст: Текст XML" in output
@@ -88,7 +89,7 @@ with tempfile.TemporaryDirectory(prefix="sfm-test-") as temp:
     assert "Символические ссылки запрещены" in output
 
     output = run(["login", "student", "student-password-123", "delete", "docs/a.json", "exit"])
-    assert not (root / "docs/a.json").exists()
+    assert "Файл удалён." in output and not (root / "docs/a.json").exists()
     with sqlite3.connect(Path(temp) / "data.sqlite") as con:
         assert con.execute("SELECT deleted FROM files WHERE path='docs/a.json'").fetchone() == (1,)
         assert con.execute("SELECT count(*) FROM operations WHERE action='delete' AND success=1").fetchone()[0] == 1
@@ -129,6 +130,8 @@ with tempfile.TemporaryDirectory(prefix="sfm-test-") as temp:
         assert con.execute("SELECT status FROM command_attempts WHERE command='login' ORDER BY id DESC LIMIT 1").fetchone() == ("started",)
     output = run(["login", "admin", "admin-password-123", "audit", "exit"])
     assert "Попытки команд" in output and "| login | started" in output
+    output = run(["login", "admin", "admin-password-123", "audit 2", "exit"])
+    assert "Попытки команд (до 2;" in output and output.count("UTC |") == 4
 
     output = run(["read", "register", "other", "other-password-123",
                   "login", "other", "other-password-123",

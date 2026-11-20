@@ -14,7 +14,25 @@ public sealed class CommandAndDocumentTests
     [InlineData("arbitrary input", "unknown", null)]
     public void ParsesCommandWithoutLoggingUnrecognizedText(string? input, string name, string? command)
     {
-        Assert.Equal((name, command), ConsoleApp.ParseCommand(input));
+        Assert.Equal((name, command, AuditService.MaxEntries), ConsoleApp.ParseCommand(input));
+    }
+
+    [Theory]
+    [InlineData("audit 4", 4)]
+    [InlineData("audit 0", 0)]
+    [InlineData("audit 201", 0)]
+    [InlineData("audit junk", 0)]
+    public void ParsesAuditLimitWithoutKeepingArbitraryArguments(string input, int limit)
+    {
+        Assert.Equal(("audit", "audit", limit), ConsoleApp.ParseCommand(input));
+    }
+
+    [Fact]
+    public void DocumentErrorsHaveLocalizedMessagesWithoutParserDetails()
+    {
+        Assert.StartsWith("Некорректный JSON", ConsoleApp.UserError(new JsonException("internal details")));
+        Assert.StartsWith("Некорректный или недопустимый XML",
+            ConsoleApp.UserError(new InvalidOperationException("internal details", new XmlException("parser details"))));
     }
 
     [Fact]

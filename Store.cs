@@ -71,8 +71,14 @@ internal sealed class Store : IAccounts, IAuditStore
         byte[] salt = RandomNumberGenerator.GetBytes(16);
         byte[] hash = Rfc2898DeriveBytes.Pbkdf2(pass, salt, 600_000, HashAlgorithmName.SHA256, 32);
         using var c = Open(); using var cmd = c.CreateCommand();
-        cmd.CommandText = "INSERT INTO users(username,salt,password_hash,iterations,admin) VALUES($n,$s,$h,600000,$a) RETURNING id";
-        cmd.Parameters.AddWithValue("$n", name); cmd.Parameters.AddWithValue("$s", salt); cmd.Parameters.AddWithValue("$h", hash); cmd.Parameters.AddWithValue("$a", admin ? 1 : 0);
+        cmd.CommandText = """
+            INSERT INTO users(username,salt,password_hash,iterations,admin)
+            VALUES($n,$s,$h,600000,$a) RETURNING id
+            """;
+        cmd.Parameters.AddWithValue("$n", name);
+        cmd.Parameters.AddWithValue("$s", salt);
+        cmd.Parameters.AddWithValue("$h", hash);
+        cmd.Parameters.AddWithValue("$a", admin ? 1 : 0);
         return (long)cmd.ExecuteScalar()!;
     }
     public User? Authenticate(string name, string pass)
@@ -156,19 +162,21 @@ internal sealed class Store : IAccounts, IAuditStore
         cmd.Parameters.AddWithValue("$b", blocked ? 1 : 0); cmd.Parameters.AddWithValue("$n", name); cmd.Parameters.AddWithValue("$id", actor);
         if (cmd.ExecuteNonQuery() != 1) throw new InvalidOperationException("Пользователь не найден или является администратором.");
     }
-    public string Events()
+    public string Events(int limit)
     {
         using var c = Open(); var b = new StringBuilder();
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = "SELECT o.timestamp,COALESCE(u.username,'-'),o.action,COALESCE(o.target,''),o.success FROM operations o LEFT JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT 200";
+            cmd.CommandText = "SELECT o.timestamp,COALESCE(u.username,'-'),o.action,COALESCE(o.target,''),o.success FROM operations o LEFT JOIN users u ON u.id=o.user_id ORDER BY o.id DESC LIMIT $limit";
+            cmd.Parameters.AddWithValue("$limit", limit);
             using var r = cmd.ExecuteReader();
             while (r.Read()) b.AppendLine($"{r.GetString(0)} UTC | {r.GetString(1)} | {r.GetString(2)} | {r.GetString(3)} | {(r.GetInt32(4) != 0 ? "успех" : "ошибка")}");
         }
-        b.AppendLine("Попытки команд (последние 200; started означает отсутствие завершения):");
+        b.AppendLine($"Попытки команд (до {limit}; started — нет записи о завершении):");
         using (var cmd = c.CreateCommand())
         {
-            cmd.CommandText = "SELECT a.started_at,COALESCE(u.username,'-'),a.command,a.status FROM command_attempts a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT 200";
+            cmd.CommandText = "SELECT a.started_at,COALESCE(u.username,'-'),a.command,a.status FROM command_attempts a LEFT JOIN users u ON u.id=a.user_id ORDER BY a.id DESC LIMIT $limit";
+            cmd.Parameters.AddWithValue("$limit", limit);
             using var r = cmd.ExecuteReader();
             while (r.Read()) b.AppendLine($"{r.GetString(0)} UTC | {r.GetString(1)} | {r.GetString(2)} | {r.GetString(3)}");
         }

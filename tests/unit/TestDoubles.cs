@@ -7,6 +7,7 @@ internal sealed class InMemoryAudit : IAuditStore
     public bool RejectStart { get; init; }
     public bool RejectFinish { get; init; }
     public bool RejectEvent { get; init; }
+    public int? LastLimit { get; private set; }
 
     public long BeginCommand(long? userId, string command)
     {
@@ -27,7 +28,11 @@ internal sealed class InMemoryAudit : IAuditStore
         EventsWritten.Add((id, action, target, success));
     }
 
-    public string Events() => "events";
+    public string Events(int limit)
+    {
+        LastLimit = limit;
+        return "events";
+    }
 }
 
 internal sealed class InMemoryAccounts : IAccounts

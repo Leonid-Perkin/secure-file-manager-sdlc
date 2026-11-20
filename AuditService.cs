@@ -5,7 +5,7 @@ internal interface IAuditStore
     long BeginCommand(long? userId, string command);
     void FinishCommand(long id, bool success);
     void Audit(long? id, string action, string? target, bool success);
-    string Events();
+    string Events(int limit);
 }
 
 internal sealed class StorageFailure(Exception inner) : IOException(
@@ -15,6 +15,7 @@ internal sealed class AuditFailure(Exception inner) : IOException("Не удал
 
 internal sealed class AuditService(IAuditStore store)
 {
+    public const int MaxEntries = 200;
     public void RunAttempt(long? userId, string command, Func<bool> execute)
     {
         long id;
@@ -58,5 +59,9 @@ internal sealed class AuditService(IAuditStore store)
         catch (Exception ex) when (ex is not OutOfMemoryException) { throw new AuditFailure(ex); }
     }
 
-    public string ReadEvents() => store.Events();
+    public string ReadEvents(int limit)
+    {
+        if (limit is < 1 or > MaxEntries) throw new ArgumentException("Укажите число записей от 1 до 200: audit N.");
+        return store.Events(limit);
+    }
 }

@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Text.Json;
+using System.Xml;
 using Microsoft.Data.Sqlite;
 
 namespace SecureFileManager;
@@ -11,15 +13,21 @@ internal sealed class ConsoleApp(Terminal terminal, AuthService auth, AuditServi
         "mkdir", "zip", "unzip", "users", "block", "unblock", "audit", "save-note", "read-note"
     ];
 
-    internal static (string Name, string? Command) ParseCommand(string? input)
+    internal static (string Name, string? Command, int AuditLimit) ParseCommand(string? input)
     {
         string name = input is null ? "exit" : input.Trim().ToLowerInvariant();
-        if (name is "help" or "menu" or "?") return (name, "help");
-        if (NumberedCommands.Contains(name, StringComparer.Ordinal)) return (name, name);
+        if (name.StartsWith("audit ", StringComparison.Ordinal))
+        {
+            bool valid = int.TryParse(name.AsSpan(6).Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out int limit)
+                && limit is >= 1 and <= AuditService.MaxEntries;
+            return ("audit", "audit", valid ? limit : 0);
+        }
+        if (name is "help" or "menu" or "?") return (name, "help", AuditService.MaxEntries);
+        if (NumberedCommands.Contains(name, StringComparer.Ordinal)) return (name, name, AuditService.MaxEntries);
         if (int.TryParse(name, NumberStyles.None, CultureInfo.InvariantCulture, out int number) &&
             number < NumberedCommands.Length && name == number.ToString(CultureInfo.InvariantCulture))
-            return (name, NumberedCommands[number]);
-        return ("unknown", null);
+            return (name, NumberedCommands[number], AuditService.MaxEntries);
+        return ("unknown", null, AuditService.MaxEntries);
     }
 
     public void Run()
@@ -39,20 +47,28 @@ internal sealed class ConsoleApp(Terminal terminal, AuthService auth, AuditServi
         {
             terminal.Output.Write(auth.Current is { } user ? $"{user.Name}> " : "гость> ");
             terminal.Output.Flush();
-            var (name, command) = ParseCommand(terminal.Reader.ReadLine());
+            var (name, command, auditLimit) = ParseCommand(terminal.Reader.ReadLine());
             try
             {
-                audit.RunAttempt(auth.Current?.Id, name, () => Dispatch(command));
+                audit.RunAttempt(auth.Current?.Id, name, () => Dispatch(command, auditLimit));
             }
             catch (Exception ex) when (ex is not (OutOfMemoryException or StorageFailure or AuditFailure or SqliteException))
             {
-                terminal.Output.WriteLine("Ошибка: " + ex.Message);
+                terminal.Output.WriteLine("Ошибка: " + UserError(ex));
             }
             if (command == "exit") return;
         }
     }
 
-    private bool Dispatch(string? command)
+    internal static string UserError(Exception error) => error switch
+    {
+        JsonException => "Некорректный JSON. Проверьте синтаксис и поля документа.",
+        XmlException or InvalidOperationException { InnerException: XmlException or InvalidDataException }
+            => "Некорректный или недопустимый XML. Проверьте структуру; DTD запрещены.",
+        _ => error.Message
+    };
+
+    private bool Dispatch(string? command, int auditLimit)
     {
         switch (command)
         {
@@ -69,8 +85,9 @@ internal sealed class ConsoleApp(Terminal terminal, AuthService auth, AuditServi
             case "block": case "unblock":
                 auth.RequireAdmin();
                 auth.SetBlocked(terminal.Input("Логин: "), blocked: command == "block");
+                terminal.Output.WriteLine(command == "block" ? "Пользователь заблокирован." : "Пользователь разблокирован.");
                 break;
-            case "audit": terminal.Output.WriteLine(auth.AdminAction("audit", null, _ => audit.ReadEvents())); break;
+            case "audit": terminal.Output.WriteLine(auth.AdminAction("audit", null, _ => audit.ReadEvents(auditLimit))); break;
             case null:
                 audit.Record(auth.Current?.Id, "unknown_command", null, false);
                 terminal.Output.WriteLine("Неизвестная команда. Введите help.");
@@ -96,6 +113,7 @@ internal sealed class ConsoleApp(Terminal terminal, AuthService auth, AuditServi
         15 audit    журнал            0 exit    выход
         16 save-note сериализовать заметку в JSON/XML
         17 read-note десериализовать заметку из JSON/XML
+        audit N     показать до N записей каждого журнала (от 1 до 200)
         Пути вводятся относительно личного каталога. Для корня укажите точку.
         """);
 }

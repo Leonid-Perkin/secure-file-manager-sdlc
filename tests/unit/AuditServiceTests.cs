@@ -55,4 +55,16 @@ public sealed class AuditServiceTests
             () => throw new IOException(), recordedInMutation: true));
         Assert.Equal((7L, "delete", "sample.txt", false), Assert.Single(sink.EventsWritten));
     }
+
+    [Fact]
+    public void AppliesReadLimitAndRejectsOutOfRangeValues()
+    {
+        var sink = new InMemoryAudit();
+        var audit = new AuditService(sink);
+        Assert.Throws<ArgumentException>(() => audit.ReadEvents(0));
+        Assert.Throws<ArgumentException>(() => audit.ReadEvents(201));
+        Assert.Null(sink.LastLimit);
+        Assert.Equal("events", audit.ReadEvents(4));
+        Assert.Equal(4, sink.LastLimit);
+    }
 }

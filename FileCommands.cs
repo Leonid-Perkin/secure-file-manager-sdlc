@@ -47,11 +47,22 @@ internal sealed class FileCommands(string data, LinuxFiles disk, Store db, AuthS
 
     private void Drives()
     {
+        bool found = false;
         foreach (var d in DriveInfo.GetDrives())
         {
-            try { terminal.Output.WriteLine(d.IsReady ? $"{d.Name} {d.DriveType} {d.DriveFormat}: всего {d.TotalSize}, доступно {d.AvailableFreeSpace} байт" : $"{d.Name}: не готов"); }
-            catch (Exception e) when (e is IOException or UnauthorizedAccessException) { terminal.Output.WriteLine($"{d.Name}: {e.Message}"); }
+            try
+            {
+                if (d.DriveType is not (DriveType.Fixed or DriveType.Removable)) continue;
+                if (!d.IsReady || d.TotalSize <= 0) continue;
+                terminal.Output.WriteLine($"{d.Name} {d.DriveType} {d.DriveFormat}: всего {d.TotalSize}, доступно {d.AvailableFreeSpace} байт");
+                found = true;
+            }
+            catch (Exception e) when (e is IOException or UnauthorizedAccessException)
+            {
+                terminal.Output.WriteLine($"{d.Name}: сведения недоступны.");
+            }
         }
+        if (!found) terminal.Output.WriteLine("Доступные локальные тома не найдены.");
     }
     private void List(string path)
     {
@@ -112,6 +123,7 @@ internal sealed class FileCommands(string data, LinuxFiles disk, Store db, AuthS
     {
         if (disk.Size(path) is null) throw new FileNotFoundException("Файл не найден.");
         Mutate("delete", path, _ => { }, _ => disk.DeleteFile(path));
+        terminal.Output.WriteLine("Файл удалён.");
     }
     private void MakeDirectory(string path)
     {
