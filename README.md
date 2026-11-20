@@ -22,7 +22,8 @@ SFM_DATA_DIR="$(mktemp -d)" dotnet run
 
 ```sh
 dotnet build
+dotnet test tests/unit/SecureFileManager.UnitTests.csproj
 python3 tests/smoke.py
 ```
 
-Тесты используют временный каталог и не затрагивают рабочую базу.
+Модульные тесты проверяют авторизацию, аудит, разбор команд и обработку JSON/XML. Сквозные тесты запускают приложение во временном каталоге и не затрагивают рабочую базу.
